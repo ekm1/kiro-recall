@@ -55,5 +55,6 @@ export function apiSession(sessionId: string) {
 }
 
 export function apiSearch(query: string, opts: { repo?: string; projectId?: number } = {}) {
-  return { query, hits: searchMessages(query, opts) };
+  const { hits, total } = searchMessages(query, opts);
+  return { query, hits, total };
 }

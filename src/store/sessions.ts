@@ -181,6 +181,25 @@ export function getMessages(sessionId: string): MessageRow[] {
     .all(sessionId) as MessageRow[];
 }
 
+// Context window: messages around a given idx within one session, used to show
+// the surrounding conversation for a search hit. size<=0 returns just the hit.
+export function getMessageWindow(
+  sessionId: string,
+  centerIdx: number,
+  size: number,
+): MessageRow[] {
+  if (size <= 0) {
+    return getDb()
+      .query("SELECT * FROM messages WHERE session_id = ? AND idx = ?")
+      .all(sessionId, centerIdx) as MessageRow[];
+  }
+  return getDb()
+    .query(
+      "SELECT * FROM messages WHERE session_id = ? AND idx BETWEEN ? AND ? ORDER BY idx ASC",
+    )
+    .all(sessionId, centerIdx - size, centerIdx + size) as MessageRow[];
+}
+
 export function getSession(sessionId: string): SessionRow | null {
   return (
     (getDb()

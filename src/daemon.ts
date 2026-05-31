@@ -14,7 +14,8 @@ import { startServer } from "./api/server.ts";
 import { startWatcher, stopWatcher } from "./ingest/watcher.ts";
 import { startSummarizeLoop, stopSummarizeLoop } from "./summarize/runner.ts";
 import { startIdleMonitor, stopIdleMonitor } from "./ingest/idle.ts";
-import { WATCH_ENABLED, DATA_DIR } from "./config.ts";
+import { preloadEmbedder } from "./search/vector.ts";
+import { WATCH_ENABLED, VECTOR_ENABLED, DATA_DIR } from "./config.ts";
 import { log } from "./log.ts";
 import { writeFileSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
@@ -87,6 +88,12 @@ function main(): void {
   }
 
   startSummarizeLoop();
+
+  // Warm the embedding model in the background so the first semantic search /
+  // index pass isn't slow. No-op when vector search is disabled.
+  if (VECTOR_ENABLED) {
+    preloadEmbedder();
+  }
 
   startIdleMonitor(gracefulExit);
 

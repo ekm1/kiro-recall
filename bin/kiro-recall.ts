@@ -83,7 +83,7 @@ async function main(): Promise<void> {
         process.exit(2);
       }
       const { searchMessages } = await import(join(SRC, "search/fts.ts"));
-      const hits = searchMessages(query, { limit: 20 });
+      const { hits } = searchMessages(query, { limit: 20 });
       if (hits.length === 0) {
         console.log(`No results for "${query}".`);
       } else {

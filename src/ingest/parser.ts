@@ -66,6 +66,25 @@ function extractText(content: unknown): string {
   return out.join("\n");
 }
 
+// Kiro prepends a large injected system/identity prompt to (usually) the first
+// user turn of a session. It's boilerplate, not conversation, and indexing it
+// pollutes FTS + embeddings (every session would "match" on prompt text).
+// Detect it conservatively: only skip when the message *starts with* one of
+// these known leading markers, so we never drop real user content.
+const SYSTEM_PROMPT_PREFIXES = [
+  "<identity>",
+  "<key_kiro_features>",
+  "<goal>",
+  "<rules>",
+  "<system>",
+  "You are Kiro,",
+];
+
+function isSystemPrompt(text: string): boolean {
+  const head = text.trimStart();
+  return SYSTEM_PROMPT_PREFIXES.some((p) => head.startsWith(p));
+}
+
 function hashMessages(messages: NormalizedMessage[]): string {
   const h = createHash("sha256");
   for (const m of messages) {
@@ -116,6 +135,9 @@ export function parseSessionFile(
     const text = extractText(m.content).trim();
     if (text.length === 0) {
       continue; // skip empty/tool-only frames from the searchable record
+    }
+    if (isSystemPrompt(text)) {
+      continue; // skip Kiro's injected system/identity prompt (not conversation)
     }
     messages.push({ idx: idx++, role: toRole(m.role), text });
   }
