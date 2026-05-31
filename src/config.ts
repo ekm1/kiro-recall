@@ -207,6 +207,11 @@ export const SUMMARIZE_ENABLED = cfgBool(
   false,
 );
 
+// Ingest Kiro's *.chat execution logs (the real agent output) in addition to
+// the workspace-session transcripts. On by default; disable with
+// KIRO_RECALL_CHAT=0 or [chat] enabled = false.
+export const CHAT_INGEST_ENABLED = cfgBool(env.KIRO_RECALL_CHAT, "chat.enabled", true);
+
 // Search tuning (used by FTS + vector search and the MCP tools).
 //   threshold     : minimum cosine similarity for a vector hit (0..1).
 //   context_size  : messages before/after a hit returned as context.

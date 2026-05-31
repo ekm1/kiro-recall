@@ -21,7 +21,7 @@ import type {
 } from "../types.ts";
 import { attributeRepos, type RepoRegistry } from "./repos.ts";
 
-function toRole(raw: unknown): Role {
+export function toRole(raw: unknown): Role {
   switch (raw) {
     case "user":
     case "human":
@@ -40,30 +40,40 @@ function toRole(raw: unknown): Role {
 
 // Extract plain text from a message's `content`, which may be a string or an
 // array of typed parts. Joins text parts; renders tool parts compactly.
-function extractText(content: unknown): string {
+export function extractText(content: unknown): string {
   if (typeof content === "string") {
     return content;
   }
-  if (!Array.isArray(content)) {
-    return "";
-  }
-  const out: string[] = [];
-  for (const part of content) {
-    if (typeof part === "string") {
-      out.push(part);
-      continue;
-    }
-    if (part && typeof part === "object") {
-      const p = part as Record<string, unknown>;
-      if (typeof p.text === "string") {
-        out.push(p.text);
-      } else if (typeof p.content === "string") {
-        out.push(p.content);
+  if (Array.isArray(content)) {
+    const out: string[] = [];
+    for (const part of content) {
+      if (typeof part === "string") {
+        out.push(part);
+        continue;
       }
-      // Unknown part types (images, tool blobs) contribute no searchable text.
+      if (part && typeof part === "object") {
+        const p = part as Record<string, unknown>;
+        if (typeof p.text === "string") {
+          out.push(p.text);
+        } else if (typeof p.content === "string") {
+          out.push(p.content);
+        }
+        // Unknown part types (images, tool blobs) contribute no searchable text.
+      }
+    }
+    return out.join("\n");
+  }
+  // Single object form, e.g. { type: "text", text: "…" } or { text } / { content }.
+  if (content && typeof content === "object") {
+    const o = content as Record<string, unknown>;
+    if (typeof o.text === "string") {
+      return o.text;
+    }
+    if (typeof o.content === "string") {
+      return o.content;
     }
   }
-  return out.join("\n");
+  return "";
 }
 
 // Kiro prepends a large injected system/identity prompt to (usually) the first
@@ -80,12 +90,12 @@ const SYSTEM_PROMPT_PREFIXES = [
   "You are Kiro,",
 ];
 
-function isSystemPrompt(text: string): boolean {
+export function isSystemPrompt(text: string): boolean {
   const head = text.trimStart();
   return SYSTEM_PROMPT_PREFIXES.some((p) => head.startsWith(p));
 }
 
-function hashMessages(messages: NormalizedMessage[]): string {
+export function hashMessages(messages: NormalizedMessage[]): string {
   const h = createHash("sha256");
   for (const m of messages) {
     h.update(m.role);

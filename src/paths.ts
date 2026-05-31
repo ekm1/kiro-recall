@@ -3,7 +3,7 @@
 // schema parsed in ingest/parser.ts.
 
 import { homedir, platform } from "os";
-import { existsSync } from "fs";
+import { existsSync, readdirSync, type Dirent } from "fs";
 import { join } from "path";
 import { AGENT_DIR_OVERRIDE } from "./config.ts";
 
@@ -65,4 +65,48 @@ export function decodeWorkspaceDirName(name: string): string | null {
   } catch {
     return null;
   }
+}
+
+
+// Locate Kiro's per-execution chat logs (the *.chat files). These hold the
+// REAL agent output — reasoning + tool calls — that the workspace-session
+// transcripts only stub as "On it." (the assistant turn's content is literally
+// that short acknowledgement; the substance lives here, reachable via the
+// executionId on the transcript turn).
+//
+// danilop/kiro-total-recall reads these *.chat files directly as its IDE
+// source; we ingest them as an additional source alongside the transcripts.
+// Recursive (bounded) scan under the agent dir, so we don't hard-code the
+// exact sub-directory layout.
+export function chatFiles(maxDepth = 5, cap = 50000): string[] {
+  const agent = kiroAgentDir();
+  if (!agent) {
+    return [];
+  }
+  const out: string[] = [];
+  const walk = (dir: string, depth: number): void => {
+    if (depth > maxDepth || out.length >= cap) {
+      return;
+    }
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        // workspace-sessions only holds .json transcripts (handled elsewhere);
+        // skipping it avoids descending that large tree for nothing.
+        if (e.name === "workspace-sessions") {
+          continue;
+        }
+        walk(join(dir, e.name), depth + 1);
+      } else if (e.isFile() && e.name.toLowerCase().endsWith(".chat")) {
+        out.push(join(dir, e.name));
+      }
+    }
+  };
+  walk(agent, 0);
+  return out;
 }

@@ -8,6 +8,9 @@ memory that **reads Kiro's own session transcripts** instead of relying on hooks
 > no guarantees or support are implied.
 
 - No hooks, no shim, no chroma/uvx. Just reads the JSON Kiro already writes.
+- Reads **both** Kiro's session transcripts **and** its `*.chat` execution logs,
+  so recall includes the real agent output — not just the short "On it."
+  acknowledgements the transcripts store for assistant turns.
 - Chats are grouped by the **repo they actually touched** (not Kiro's primary
   workspace root), recovered by matching file paths in each transcript.
 - Search (FTS5), a web UI to browse history per repo, and MCP recall tools in chat.
@@ -93,6 +96,7 @@ Results include a relevance score and the surrounding conversation context.
 | `KIRO_RECALL_POLL_INTERVAL_MS` | `15000` | poll-fallback interval |
 | `KIRO_RECALL_VECTOR` | `true` | semantic search (uses the optional `@xenova/transformers` dep) |
 | `KIRO_RECALL_SUMMARIZE` | `false` | LLM observations (needs a provider key) |
+| `KIRO_RECALL_CHAT` | `true` | also ingest Kiro's `*.chat` execution logs (real agent output) |
 | `KIRO_RECALL_SEARCH_THRESHOLD` | `0.2` | min cosine similarity for a vector hit |
 | `KIRO_RECALL_SEARCH_CONTEXT_SIZE` | `2` | messages of context per search hit |
 | `KIRO_RECALL_SEARCH_MAX_RESULTS` | `15` | default page size for MCP search |
@@ -118,6 +122,9 @@ enabled = true
 [summarize]
 enabled = false
 
+[chat]
+enabled = true
+
 [search]
 threshold = 0.2
 context_size = 2
@@ -131,6 +138,10 @@ max_results = 15
   `@xenova/transformers` dep is unavailable, search silently falls back to FTS.
   Turn it off with `KIRO_RECALL_VECTOR=0`.
 - The store is a **derived index** — delete `~/.kiro-recall` and re-scan to rebuild.
+- `*.chat` execution logs are indexed as their own sessions (id prefixed
+  `chat:`, type `agent-execution`) and attributed to the repo their tool calls
+  touched. They sit alongside the matching transcript session; disable with
+  `KIRO_RECALL_CHAT=0`.
 - Repo attribution is heuristic: chats with no file-path references fall back to
   Kiro's primary workspace root.
 - The currently-open Kiro session is not searchable until Kiro flushes it to disk.
