@@ -1,4 +1,4 @@
-# kiro-recall v2
+# kiro-recall
 
 Persistent, browsable conversation memory for Kiro IDE — a claude-mem-style
 memory that **reads Kiro's own session transcripts** instead of relying on hooks.
