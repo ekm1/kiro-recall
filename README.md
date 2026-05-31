@@ -22,7 +22,7 @@ Kiro writes <sessionId>.json transcripts
    kiro-recall MCP server  ← Kiro spawns this every session
         │
         ▼
-   kiro_recall_search / recall / get_session  (recall in chat)
+   kiro_recall_search_project / search_global / recall / get_session  (recall in chat)
 ```
 
 The MCP server is spawned by Kiro on every session. On boot it ensures the
@@ -62,16 +62,63 @@ bun run uninstall-kiro   # removes MCP entry + steering; leaves your DB intact
 | `bun run stop` | stop the daemon |
 | `bun run mcp` | run the MCP server (normally Kiro does this) |
 
+## Recall tools (MCP)
+
+The agent gets four read-only tools (auto-approved on install):
+
+| Tool | What |
+|------|------|
+| `kiro_recall_search_project` | Search memory for the **current repo** (auto-detected from the workspace). Default for "how did we do X here". |
+| `kiro_recall_search_global` | Search memory across **all** repos — preferences, recurring patterns, how something was solved elsewhere. |
+| `kiro_recall_recall` | List recent sessions (current repo, or `global: true` for all). |
+| `kiro_recall_get_session` | Fetch a full transcript by its `[session:…]` id. |
+
+The two search tools accept `after` / `before` (ISO 8601 date filters),
+`contextSize` (surrounding messages per hit, default 2), and `limit` / `offset`
+for pagination (results end with a hint telling the agent how to page further).
+Results include a relevance score and the surrounding conversation context.
+
 ## Config (env vars)
 
 | Var | Default | Purpose |
 |-----|---------|---------|
 | `KIRO_RECALL_PORT` | `37800` | HTTP/UI port |
 | `KIRO_RECALL_DATA_DIR` | `~/.kiro-recall` | DB + logs (disposable) |
+| `KIRO_RECALL_AGENT_DIR` | auto | Override Kiro's `globalStorage` agent dir |
 | `KIRO_RECALL_WATCH` | `true` | live file watcher |
 | `KIRO_RECALL_POLL_INTERVAL_MS` | `15000` | poll-fallback interval |
 | `KIRO_RECALL_VECTOR` | `false` | semantic search (needs `@xenova/transformers`) |
 | `KIRO_RECALL_SUMMARIZE` | `false` | LLM observations (needs a provider key) |
+| `KIRO_RECALL_SEARCH_THRESHOLD` | `0.2` | min cosine similarity for a vector hit |
+| `KIRO_RECALL_SEARCH_CONTEXT_SIZE` | `2` | messages of context per search hit |
+| `KIRO_RECALL_SEARCH_MAX_RESULTS` | `15` | default page size for MCP search |
+| `KIRO_RECALL_CONFIG` | auto | explicit path to a `config.toml` |
+
+## Config file (optional)
+
+Instead of env vars you can drop a `config.toml` at
+`~/.config/kiro-recall/config.toml` (or `$KIRO_RECALL_CONFIG`). Env vars always
+win over the file, which wins over defaults.
+
+```toml
+[server]
+port = 37800
+
+[paths]
+data_dir = "~/.kiro-recall"
+# agent_dir = "/custom/path/to/globalStorage/kiro.kiroagent"
+
+[vector]
+enabled = false
+
+[summarize]
+enabled = false
+
+[search]
+threshold = 0.2
+context_size = 2
+max_results = 15
+```
 
 ## Notes
 

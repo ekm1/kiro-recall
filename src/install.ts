@@ -47,7 +47,13 @@ function mcpEntry() {
     ...base,
     description:
       "kiro-recall: recall past Kiro conversations per repo. Auto-starts the memory daemon + UI.",
-    autoApprove: ["kiro_recall_search", "kiro_recall_recall", "kiro_recall_get_session"],
+    autoApprove: [
+      "kiro_recall_search_project",
+      "kiro_recall_search_global",
+      "kiro_recall_search",
+      "kiro_recall_recall",
+      "kiro_recall_get_session",
+    ],
   };
 }
 
@@ -91,14 +97,25 @@ inclusion: always
 You have a persistent memory of past Kiro conversations, grouped by the repo
 each chat actually touched, exposed via the \`kiro-recall\` MCP server.
 
-## When to recall
-Before non-trivial work on a repo you have not discussed this session, call
-\`kiro_recall_search\` with a short, specific query (e.g. the feature, bug, or file
-you are about to touch). If a result looks relevant, fetch the full transcript
-with \`kiro_recall_get_session\`.
+## When to recall (triggers)
+Proactively recall when the user (or the task) implies prior context, e.g.:
+"like we discussed", "as we said before", "remember when", "how did we fix",
+"what did we decide about", "what's my usual approach to", "have we done this
+before". Also recall before non-trivial work on a repo/feature/file you have
+not discussed yet this session.
 
-Use \`kiro_recall_recall\` (optionally scoped to a repo name) at the start of work to
-see recent related sessions.
+## Which tool
+- \`kiro_recall_search_project\` — search THIS repo's history (auto-detects the
+  current workspace). Your default for "how did we do X here".
+- \`kiro_recall_search_global\` — search across ALL repos. Use for preferences,
+  recurring patterns, or how something was solved in a different project.
+- \`kiro_recall_recall\` — list recent sessions (current repo, or global=true) at
+  the start of work.
+- \`kiro_recall_get_session\` — open a full transcript via its [session:…] id.
+
+Search supports date filters (\`after\`/\`before\`, ISO 8601), \`contextSize\` for
+surrounding messages, and \`limit\`/\`offset\` for pagination (follow the hint at
+the end of results to page further).
 
 ## Quiet by default
 Do not narrate memory lookups unless asked. If a search returns nothing useful,

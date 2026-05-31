@@ -5,6 +5,7 @@
 import { homedir, platform } from "os";
 import { existsSync } from "fs";
 import { join } from "path";
+import { AGENT_DIR_OVERRIDE } from "./config.ts";
 
 const AGENT_DIR = "kiro.kiroagent";
 
@@ -26,9 +27,9 @@ function kiroUserDirs(): string[] {
 
 // Allow explicit override for tests / non-standard installs.
 export function kiroAgentDir(): string | null {
-  const override = process.env.KIRO_RECALL_AGENT_DIR;
-  if (override && existsSync(override)) {
-    return override;
+  // Override via KIRO_RECALL_AGENT_DIR env or paths.agent_dir in config.toml.
+  if (AGENT_DIR_OVERRIDE && existsSync(AGENT_DIR_OVERRIDE)) {
+    return AGENT_DIR_OVERRIDE;
   }
   for (const userDir of kiroUserDirs()) {
     const candidate = join(userDir, "globalStorage", AGENT_DIR);
