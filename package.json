@@ -5,6 +5,14 @@
   "description": "Persistent, browsable conversation memory for Kiro IDE. Reads Kiro's own session transcripts; no hooks.",
   "license": "Apache-2.0",
   "author": "Migel Hoxha",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ekm1/kiro-recall.git"
+  },
+  "homepage": "https://github.com/ekm1/kiro-recall#readme",
+  "bugs": {
+    "url": "https://github.com/ekm1/kiro-recall/issues"
+  },
   "bin": {
     "kiro-recall": "bin/cli.cjs"
   },
