@@ -1,8 +1,8 @@
 name: Release
 
 # Cuts a GitHub Release when a version tag is pushed (e.g. v0.1.0).
-# Release-only: no npm publish. Verifies the code runs under Bun, then
-# packages the source as a tarball asset and publishes release notes.
+# Verifies the code runs under Bun, publishes to npm, then packages the
+# source as a tarball asset and publishes release notes.
 
 on:
   push:
@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write # npm provenance
 
 jobs:
   release:
@@ -25,6 +26,12 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      - name: Setup Node (npm registry)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -78,6 +85,11 @@ jobs:
               -czf "${NAME}.tar.gz" \
               bin src package.json bun.lock tsconfig.json install.sh README.md LICENSE NOTICE
           ls -lh "${NAME}.tar.gz"
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
