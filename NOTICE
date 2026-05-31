@@ -1,0 +1,9 @@
+kiro-recall
+Copyright 2026 Migel Hoxha
+
+This product includes software developed for recalling Kiro IDE conversation
+history. Licensed under the Apache License, Version 2.0.
+
+Conceptually inspired by claude-mem (persistent memory for AI coding sessions),
+but independently implemented: kiro-recall reads Kiro's own session transcripts
+rather than capturing via hooks.

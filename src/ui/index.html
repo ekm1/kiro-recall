@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>kiro-recall</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <span class="dot"></span>
+        kiro<span class="brand-accent">recall</span>
+      </div>
+      <div class="search">
+        <svg class="search-icon" viewBox="0 0 24 24" width="15" height="15"><path d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input id="search-input" type="text" placeholder="Search conversations…" autocomplete="off" spellcheck="false" />
+        <kbd class="kbd">/</kbd>
+        <label class="scope" id="scope-label" hidden>
+          <input type="checkbox" id="scope-project" /> <span id="scope-name">this repo</span>
+        </label>
+      </div>
+      <div id="status" class="status">connecting…</div>
+    </header>
+
+    <main>
+      <nav id="repos" class="pane pane-repos"></nav>
+      <section id="sessions" class="pane pane-sessions">
+        <div class="placeholder">Pick a repo</div>
+      </section>
+      <section id="transcript" class="pane pane-transcript">
+        <div class="placeholder big">
+          <div class="placeholder-art">⌘</div>
+          <div>Select a conversation to read it</div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

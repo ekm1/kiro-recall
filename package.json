@@ -1,0 +1,40 @@
+{
+  "name": "kiro-recall",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Persistent, browsable conversation memory for Kiro IDE. Reads Kiro's own session transcripts; no hooks.",
+  "license": "Apache-2.0",
+  "author": "Migel Hoxha",
+  "bin": {
+    "kiro-recall": "bin/kiro-recall.ts"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "start": "bun run src/daemon.ts",
+    "scan": "bun run bin/kiro-recall.ts scan",
+    "rebuild": "bun run bin/kiro-recall.ts rebuild",
+    "mcp": "bun run src/mcp/server.ts",
+    "install-kiro": "bun run bin/kiro-recall.ts install",
+    "uninstall-kiro": "bun run bin/kiro-recall.ts uninstall",
+    "status": "bun run bin/kiro-recall.ts status",
+    "stop": "bun run bin/kiro-recall.ts stop",
+    "daemon": "bun run bin/kiro-recall.ts start",
+    "link-cli": "bun link",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}

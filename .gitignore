@@ -1,0 +1,7 @@
+node_modules/
+*.log
+.DS_Store
+data/
+dist/
+RELEASE_NOTES.md
+kiro-recall-*.tar.gz
