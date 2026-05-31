@@ -195,8 +195,12 @@ export const WATCH_DEBOUNCE_MS = int(env.KIRO_RECALL_WATCH_DEBOUNCE_MS, 2000);
 export const POLL_INTERVAL_MS = int(env.KIRO_RECALL_POLL_INTERVAL_MS, 15000);
 export const WATCH_ENABLED = cfgBool(env.KIRO_RECALL_WATCH, "watch.enabled", true);
 
-// Optional layers (off by default — zero cost, zero external deps).
-export const VECTOR_ENABLED = cfgBool(env.KIRO_RECALL_VECTOR, "vector.enabled", false);
+// Semantic (vector) search is ON by default. The embedding backend
+// (@xenova/transformers) ships as an optional dependency; if it isn't present
+// at runtime, vector search degrades to a safe no-op and FTS still works.
+// Disable explicitly with KIRO_RECALL_VECTOR=0 or [vector] enabled = false.
+export const VECTOR_ENABLED = cfgBool(env.KIRO_RECALL_VECTOR, "vector.enabled", true);
+// LLM observations stay off by default (needs a provider API key).
 export const SUMMARIZE_ENABLED = cfgBool(
   env.KIRO_RECALL_SUMMARIZE,
   "summarize.enabled",
