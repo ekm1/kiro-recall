@@ -28,10 +28,6 @@ function kiroBase(local: string | null): string {
   return join(homedir(), ".kiro");
 }
 
-function bunPath(): string {
-  return process.execPath; // the bun running this installer
-}
-
 function globalKiroMemBin(): string | null {
   const res = spawnSync("which", ["kiro-recall"], { encoding: "utf-8" });
   const path = res.status === 0 ? res.stdout.trim() : "";
@@ -40,9 +36,12 @@ function globalKiroMemBin(): string | null {
 
 function mcpEntry() {
   const globalBin = globalKiroMemBin();
+  // Prefer a globally-linked `kiro-recall` binary (npm i -g). Otherwise run the
+  // node bootstrap (cli.cjs), which finds/installs bun and delegates — so a
+  // missing/moved bun never breaks this entry.
   const base = globalBin
     ? { command: globalBin, args: ["mcp"] }
-    : { command: bunPath(), args: ["run", join(repoRoot(), "bin", "kiro-recall.ts"), "mcp"] };
+    : { command: "node", args: [join(repoRoot(), "bin", "cli.cjs"), "mcp"] };
   return {
     type: "stdio",
     ...base,
