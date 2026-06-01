@@ -207,6 +207,16 @@ export const SUMMARIZE_ENABLED = cfgBool(
   false,
 );
 
+// Enrich transcript assistant turns ("On it." stubs) with the real generated
+// output from Kiro's per-execution agent logs (the exec store), matched by
+// executionId. On by default. Disable with KIRO_RECALL_EXEC_ENRICH=0 or
+// [exec] enrich = false.
+export const CHAT_INGEST_ENABLED = cfgBool(
+  env.KIRO_RECALL_EXEC_ENRICH,
+  "exec.enrich",
+  true,
+);
+
 // Search tuning (used by FTS + vector search and the MCP tools).
 //   threshold     : minimum cosine similarity for a vector hit (0..1).
 //   context_size  : messages before/after a hit returned as context.
@@ -232,6 +242,11 @@ export const SEARCH_MAX_RESULTS = cfgInt(
 export const IDLE_SHUTDOWN_MS = int(env.KIRO_RECALL_IDLE_SHUTDOWN_MS, 5 * 60 * 1000);
 export const IDLE_CHECK_INTERVAL_MS = int(env.KIRO_RECALL_IDLE_CHECK_MS, 60 * 1000);
 // Set KIRO_RECALL_IDLE_SHUTDOWN_MS=0 to disable idle shutdown entirely.
+
+// Retention: drop sessions whose last activity (updated_at) is older than this
+// many days. Keeps the index small + relevant. 0 disables pruning entirely.
+// Env KIRO_RECALL_RETENTION_DAYS or [retention] days in config.toml.
+export const RETENTION_DAYS = cfgInt(env.KIRO_RECALL_RETENTION_DAYS, "retention.days", 30);
 
 // Summarize provider config (only used when SUMMARIZE_ENABLED).
 export const SUMMARIZE_PROVIDER = env.KIRO_RECALL_SUMMARIZE_PROVIDER || "none";

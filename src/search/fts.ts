@@ -30,20 +30,38 @@ export interface SearchOpts {
   before?: number; // epoch ms, exclusive (session updated_at < before)
 }
 
-// Escape a user query into a safe FTS5 MATCH string. We quote each token so
-// punctuation in the query can't produce FTS syntax errors.
-function toMatchQuery(query: string): string {
-  const tokens = query
+// Tokenize + quote a user query into safe FTS5 prefix terms. Quoting each token
+// means punctuation in the query can't produce FTS syntax errors.
+function toTerms(query: string): string[] {
+  return query
     .toLowerCase()
     .split(/\s+/)
     .map((t) => t.replace(/["]/g, "").trim())
     .filter((t) => t.length > 0)
     .map((t) => `"${t}"*`);
-  return tokens.join(" ");
+}
+
+// Build an FTS5 MATCH string. Default joiner is a space (implicit AND).
+function toMatchQuery(query: string, joiner: " " | " OR " = " "): string {
+  return toTerms(query).join(joiner);
 }
 
 export function searchMessages(query: string, opts: SearchOpts = {}): SearchResult {
-  const match = toMatchQuery(query);
+  const terms = toTerms(query);
+  if (terms.length === 0) {
+    return { hits: [], total: 0 };
+  }
+  // Precision-first: try implicit-AND (all terms must match). If that yields
+  // nothing AND there are multiple terms, retry with OR so long natural-language
+  // queries still recall relevant chats instead of returning empty.
+  const andResult = runMatch(toMatchQuery(query), opts);
+  if (andResult.total > 0 || terms.length < 2) {
+    return andResult;
+  }
+  return runMatch(toMatchQuery(query, " OR "), opts);
+}
+
+function runMatch(match: string, opts: SearchOpts): SearchResult {
   if (!match) {
     return { hits: [], total: 0 };
   }

@@ -6,12 +6,14 @@ import { join } from "path";
 import { workspaceSessionsDir } from "../paths.ts";
 import { parseSessionFile, parseSessionIndex } from "./parser.ts";
 import { loadRepoRegistry, type RepoRegistry } from "./repos.ts";
+import { buildExecMap, type ExecMap } from "./execlog.ts";
 import {
   applyIndexTimestamp,
   upsertProject,
   upsertSession,
 } from "../store/sessions.ts";
-import { setMeta } from "../store/db.ts";
+import { setMeta, pruneOlderThan } from "../store/db.ts";
+import { CHAT_INGEST_ENABLED, RETENTION_DAYS } from "../config.ts";
 import { log } from "../log.ts";
 import type { SessionIndexEntry } from "../types.ts";
 
@@ -32,11 +34,19 @@ function readJson(path: string): unknown | null {
 }
 
 // Scan a single project directory (named by base64url workspace path).
-function scanProjectDir(dir: string, registry: RepoRegistry): Omit<ScanResult, "projects"> {
+function scanProjectDir(
+  dir: string,
+  registry: RepoRegistry,
+  execMap?: ExecMap,
+): Omit<ScanResult, "projects"> {
   let filesSeen = 0;
   let upserted = 0;
   let skipped = 0;
   let errors = 0;
+
+  // Retention cutoff: ignore transcript files not touched within the window.
+  // Keeps the index lean and avoids re-ingesting chats the pruner will drop.
+  const cutoffMs = RETENTION_DAYS > 0 ? Date.now() - RETENTION_DAYS * 86400000 : 0;
 
   // 1. Read the index for authoritative titles/timestamps + project path.
   let index: SessionIndexEntry[] = [];
@@ -73,12 +83,17 @@ function scanProjectDir(dir: string, registry: RepoRegistry): Omit<ScanResult, "
     } catch {
       // keep default
     }
+    // Skip files outside the retention window (cheap mtime gate, pre-parse).
+    if (cutoffMs > 0 && mtimeMs < cutoffMs) {
+      skipped++;
+      continue;
+    }
     const raw = readJson(filePath);
     if (!raw) {
       errors++;
       continue;
     }
-    const session = parseSessionFile(raw, projectPath, mtimeMs, registry);
+    const session = parseSessionFile(raw, projectPath, mtimeMs, registry, execMap);
     if (!session) {
       continue; // not a transcript / unusable
     }
@@ -105,7 +120,7 @@ function scanProjectDir(dir: string, registry: RepoRegistry): Omit<ScanResult, "
   return { filesSeen, upserted, skipped, errors };
 }
 
-export function fullScan(): ScanResult {
+export async function fullScan(): Promise<ScanResult> {
   const root = workspaceSessionsDir();
   const result: ScanResult = {
     projects: 0,
@@ -131,8 +146,31 @@ export function fullScan(): ScanResult {
 
   const registry = loadRepoRegistry(true);
 
+  // Build the exec-store enrichment map (executionId -> real assistant text)
+  // so transcript "On it." stubs get replaced with the actual output. Gated by
+  // config; incremental via a persisted mtime manifest so it's cheap after the
+  // first pass. Failure here must never block transcript ingestion.
+  let execMap: ExecMap | undefined;
+  if (CHAT_INGEST_ENABLED) {
+    try {
+      const r = await buildExecMap();
+      execMap = r.map;
+      log.info("EXECLOG", "enrichment map built", {
+        executions: r.map.size,
+        filesSeen: r.filesSeen,
+        parsed: r.parsed,
+        reused: r.reused,
+        errors: r.errors,
+      });
+    } catch (e) {
+      log.warn("EXECLOG", "enrichment failed, proceeding without it", {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
   for (const dir of projectDirs) {
-    const r = scanProjectDir(dir, registry);
+    const r = scanProjectDir(dir, registry, execMap);
     result.projects++;
     result.filesSeen += r.filesSeen;
     result.upserted += r.upserted;
@@ -141,6 +179,16 @@ export function fullScan(): ScanResult {
   }
 
   setMeta("last_scan", String(Date.now()));
+
+  // Retention prune: drop anything that aged out of the window this pass.
+  if (RETENTION_DAYS > 0) {
+    const cutoff = Date.now() - RETENTION_DAYS * 86400000;
+    const removed = pruneOlderThan(cutoff);
+    if (removed > 0) {
+      log.info("RETENTION", "pruned stale sessions", { removed, retentionDays: RETENTION_DAYS });
+    }
+  }
+
   log.info("SCAN", "full scan complete", result);
   return result;
 }

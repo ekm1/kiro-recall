@@ -16,7 +16,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { getDb } from "../store/db.ts";
-import { searchMessages, type SearchHit } from "../search/fts.ts";
+import { searchMessages } from "../search/fts.ts";
 import { searchObservations } from "../store/observations.ts";
 import {
   listProjects,
@@ -26,6 +26,7 @@ import {
   getMessages,
   getMessageWindow,
   getSession,
+  repoHasSession,
 } from "../store/sessions.ts";
 import { SEARCH_CONTEXT_SIZE, SEARCH_MAX_RESULTS, VECTOR_ENABLED } from "../config.ts";
 import { preloadEmbedder, vectorSearch } from "../search/vector.ts";
@@ -129,8 +130,11 @@ function oneLine(text: string, max = 200): string {
 // Collapse near-duplicate hits within the same session: if two matches are
 // within 2*contextSize messages of each other their context windows overlap,
 // so keep only the higher-scored one. Mirrors total-recall's dedup.
-function dedupeHits(hits: SearchHit[], contextSize: number): SearchHit[] {
-  const bySession = new Map<string, SearchHit[]>();
+function dedupeHits<T extends { sessionId: string; idx: number; score: number }>(
+  hits: T[],
+  contextSize: number,
+): T[] {
+  const bySession = new Map<string, T[]>();
   for (const h of hits) {
     const arr = bySession.get(h.sessionId);
     if (arr) {
@@ -140,10 +144,10 @@ function dedupeHits(hits: SearchHit[], contextSize: number): SearchHit[] {
     }
   }
   const dist = 2 * Math.max(contextSize, 1);
-  const out: SearchHit[] = [];
+  const out: T[] = [];
   for (const arr of bySession.values()) {
     arr.sort((a, b) => a.idx - b.idx);
-    const kept: SearchHit[] = [];
+    const kept: T[] = [];
     for (const h of arr) {
       const last = kept[kept.length - 1];
       if (last && h.idx - last.idx <= dist) {
@@ -192,15 +196,34 @@ interface SearchArgs {
   contextSize?: number;
 }
 
+// A unified hit used after fusing FTS + vector results. Carries enough to
+// render a context window and attribute the source signal(s).
+interface FusedHit {
+  sessionId: string;
+  projectId?: number;
+  projectName: string;
+  title: string;
+  idx: number;
+  score: number; // fused RRF score (higher = better)
+  sources: string[]; // which signals matched: "keyword" / "semantic"
+}
+
+// Reciprocal-rank fusion constant. Each ranked list contributes 1/(k+rank) to a
+// hit's score. Robust because it needs only rank order, not comparable raw
+// scores (bm25 vs cosine aren't on one scale).
+const RRF_K = 60;
+
 async function doSearch(args: SearchArgs): Promise<string> {
   const query = args.query.trim();
   if (!query) {
     return "Provide a search query.";
   }
+  // Scope is now a SOFT signal only — it boosts ranking, never filters. Chats
+  // are often logged under a different repo than the code they discuss, so
+  // hard-scoping silently hid relevant memory. Retrieval is always global.
   const scope = resolveScope(args.global ?? false, args.project);
-  if (scope.unresolved) {
-    return `No memory found for "${scope.label}". It may not have been indexed yet, or try kiro_recall_search_global.`;
-  }
+  const boostRepo = scope.repo;
+  const boostProjectId = scope.projectId;
 
   const limit = args.limit ?? SEARCH_MAX_RESULTS;
   const offset = Math.max(args.offset ?? 0, 0);
@@ -208,38 +231,83 @@ async function doSearch(args: SearchArgs): Promise<string> {
   const after = parseDateMs(args.after);
   const before = parseDateMs(args.before);
 
-  // Over-fetch, dedupe overlapping windows, then paginate the deduped set.
-  const fetch = (offset + limit) * 3;
-  const { hits } = searchMessages(query, {
-    repo: scope.repo,
-    projectId: scope.projectId,
-    limit: fetch,
-    offset: 0,
-    after,
-    before,
-  });
-  const deduped = dedupeHits(hits, contextSize);
-  const total = deduped.length;
-  const page = deduped.slice(offset, offset + limit);
-  const hasMore = offset + page.length < total;
-
-  const obs = searchObservations(query, 5);
+  // Pull both signals globally (no repo/project filter), then fuse.
+  const want = (offset + limit) * 3;
+  const { hits: ftsHits } = searchMessages(query, { limit: want, offset: 0, after, before });
   let semantic: Awaited<ReturnType<typeof vectorSearch>> = [];
   if (VECTOR_ENABLED) {
-    semantic = await vectorSearch(query, {
-      projectId: scope.projectId,
-      limit: 5,
-      after,
-      before,
-    });
+    semantic = await vectorSearch(query, { limit: want, after, before });
   }
 
-  if (page.length === 0 && obs.length === 0 && semantic.length === 0) {
-    return `No memory found for "${query}"${scope.repo || scope.projectId ? ` in ${scope.label}` : ""}.`;
+  // Fuse via RRF, keyed by session+message so the same hit from both signals
+  // reinforces instead of duplicating.
+  const fused = new Map<string, FusedHit>();
+  const bump = (
+    key: string,
+    base: Omit<FusedHit, "score" | "sources">,
+    rank: number,
+    src: string,
+  ) => {
+    const existing = fused.get(key);
+    const inc = 1 / (RRF_K + rank);
+    if (existing) {
+      existing.score += inc;
+      if (!existing.sources.includes(src)) {
+        existing.sources.push(src);
+      }
+    } else {
+      fused.set(key, { ...base, score: inc, sources: [src] });
+    }
+  };
+  ftsHits.forEach((h, i) =>
+    bump(
+      `${h.sessionId}:${h.idx}`,
+      { sessionId: h.sessionId, projectName: h.projectName, title: h.title, idx: h.idx },
+      i,
+      "keyword",
+    ),
+  );
+  semantic.forEach((h, i) =>
+    bump(
+      `${h.sessionId}:${h.idx}`,
+      {
+        sessionId: h.sessionId,
+        projectId: h.projectId,
+        projectName: h.projectName,
+        title: h.title,
+        idx: h.idx,
+      },
+      i,
+      "semantic",
+    ),
+  );
+
+  // Soft scope boost: nudge hits from the current repo/project up without
+  // excluding anything from other repos.
+  const SCOPE_BOOST = 1 / (RRF_K + 1); // ~one extra top-rank vote
+  if (boostRepo || boostProjectId !== undefined) {
+    for (const h of fused.values()) {
+      const inRepo = boostRepo ? repoHasSession(boostRepo, h.sessionId) : false;
+      const inProject = boostProjectId !== undefined && h.projectId === boostProjectId;
+      if (inRepo || inProject) {
+        h.score += SCOPE_BOOST;
+      }
+    }
+  }
+
+  const ranked = dedupeHits([...fused.values()], contextSize);
+  const total = ranked.length;
+  const pageHits = ranked.slice(offset, offset + limit);
+  const hasMore = offset + pageHits.length < total;
+
+  const obs = searchObservations(query, 5);
+
+  if (pageHits.length === 0 && obs.length === 0) {
+    return `No memory found for "${query}".`;
   }
 
   const lines: string[] = [];
-  lines.push(`# Recall: "${query}" (${scope.label ?? "all repos"})`);
+  lines.push(`# Recall: "${query}"${scope.label ? ` (boosted: ${scope.label})` : ""}`);
 
   if (obs.length) {
     lines.push("", "## Observations");
@@ -248,13 +316,11 @@ async function doSearch(args: SearchArgs): Promise<string> {
     }
   }
 
-  if (page.length) {
-    lines.push("", `## Conversation matches`);
-    for (const h of page) {
-      lines.push(
-        "",
-        `### "${h.title}" · ${h.projectName} · score ${h.score} [session:${h.sessionId}]`,
-      );
+  if (pageHits.length) {
+    lines.push("", `## Matches`);
+    for (const h of pageHits) {
+      const tag = h.sources.join("+");
+      lines.push("", `### "${h.title}" · ${h.projectName} · ${tag} [session:${h.sessionId}]`);
       const window = getMessageWindow(h.sessionId, h.idx, contextSize);
       for (const m of window) {
         const mark = m.idx === h.idx ? "» " : "  ";
@@ -263,14 +329,7 @@ async function doSearch(args: SearchArgs): Promise<string> {
     }
   }
 
-  if (semantic.length) {
-    lines.push("", "## Semantically related");
-    for (const s of semantic) {
-      lines.push(`- (score ${s.score}) "${s.title}": ${s.snippet}  [session:${s.sessionId}]`);
-    }
-  }
-
-  lines.push("", `_${genHint(total, offset, page.length, limit, hasMore)}_`);
+  lines.push("", `_${genHint(total, offset, pageHits.length, limit, hasMore)}_`);
   return lines.join("\n");
 }
 

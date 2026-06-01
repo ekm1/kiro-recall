@@ -107,6 +107,50 @@ function migrate(d: Database): void {
   d.exec("CREATE INDEX IF NOT EXISTS idx_sessions_primary_repo ON sessions(primary_repo);");
 }
 
+// Retention prune: delete sessions whose last activity is older than `cutoffMs`
+// (epoch). Cascades to messages/session_repos/observations via FK. Two tables
+// need manual care: messages_fts (external-content — must 'delete' rows before
+// the messages rows vanish) and message_vectors (no FK to sessions).
+// Returns the number of sessions removed.
+export function pruneOlderThan(cutoffMs: number): number {
+  const d = getDb();
+  const stale = d
+    .query("SELECT id FROM sessions WHERE updated_at < ?")
+    .all(cutoffMs) as Array<{ id: string }>;
+  if (stale.length === 0) {
+    return 0;
+  }
+  const hasVectors =
+    d
+      .query("SELECT name FROM sqlite_master WHERE type='table' AND name='message_vectors'")
+      .get() !== undefined;
+
+  const tx = d.transaction(() => {
+    for (const { id } of stale) {
+      // Sync FTS external-content: delete each message from the index first.
+      const msgIds = d
+        .query("SELECT id FROM messages WHERE session_id = ?")
+        .all(id) as Array<{ id: number }>;
+      for (const m of msgIds) {
+        d.query(
+          "INSERT INTO messages_fts(messages_fts, rowid, text) VALUES('delete', ?, (SELECT text FROM messages WHERE id = ?))",
+        ).run(m.id, m.id);
+      }
+      if (hasVectors) {
+        d.query("DELETE FROM message_vectors WHERE session_id = ?").run(id);
+      }
+      // FK ON DELETE CASCADE removes messages, session_repos, observations.
+      d.query("DELETE FROM sessions WHERE id = ?").run(id);
+    }
+    // Drop now-empty projects so the repo list stays clean.
+    d.exec(
+      "DELETE FROM projects WHERE id NOT IN (SELECT DISTINCT project_id FROM sessions)",
+    );
+  });
+  tx();
+  return stale.length;
+}
+
 export function setMeta(key: string, value: string): void {
   getDb()
     .query("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")

@@ -261,6 +261,31 @@ export function listSessionsByRepo(repo: string, limit = 200): SessionRow[] {
     .all(repo, limit) as SessionRow[];
 }
 
+// How many sessions have no repo attribution (for the UI "Untagged" bucket).
+export function countUntaggedSessions(): number {
+  const row = getDb()
+    .query(
+      `SELECT COUNT(*) AS c FROM sessions s
+       WHERE NOT EXISTS (SELECT 1 FROM session_repos sr WHERE sr.session_id = s.id)`,
+    )
+    .get() as { c: number };
+  return row.c;
+}
+
+// Sessions with no repo attribution at all. The UI surfaces these in an
+// "Untagged" bucket so they're never invisible just because path-scanning
+// found no known repo root in the transcript.
+export function listUntaggedSessions(limit = 200): SessionRow[] {
+  return getDb()
+    .query(
+      `SELECT s.*, p.path AS project_path FROM sessions s
+       JOIN projects p ON p.id = s.project_id
+       WHERE NOT EXISTS (SELECT 1 FROM session_repos sr WHERE sr.session_id = s.id)
+       ORDER BY s.updated_at DESC LIMIT ?`,
+    )
+    .all(limit) as SessionRow[];
+}
+
 export interface SessionRepoRow {
   repo: string;
   ref_count: number;
@@ -272,4 +297,14 @@ export function getSessionRepos(sessionId: string): SessionRepoRow[] {
       "SELECT repo, ref_count FROM session_repos WHERE session_id = ? ORDER BY ref_count DESC",
     )
     .all(sessionId) as SessionRepoRow[];
+}
+
+// Cheap membership check: did this session touch the given repo? Used for the
+// soft scope boost in search ranking (not for filtering).
+export function repoHasSession(repo: string, sessionId: string): boolean {
+  return (
+    getDb()
+      .query("SELECT 1 FROM session_repos WHERE repo = ? AND session_id = ? LIMIT 1")
+      .get(repo, sessionId) !== undefined
+  );
 }

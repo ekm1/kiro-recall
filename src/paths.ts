@@ -3,7 +3,7 @@
 // schema parsed in ingest/parser.ts.
 
 import { homedir, platform } from "os";
-import { existsSync } from "fs";
+import { existsSync, readdirSync, type Dirent } from "fs";
 import { join } from "path";
 import { AGENT_DIR_OVERRIDE } from "./config.ts";
 
@@ -65,4 +65,60 @@ export function decodeWorkspaceDirName(name: string): string | null {
   } catch {
     return null;
   }
+}
+
+// Locate Kiro's per-execution agent logs (the current-era "exec store"). Each
+// file is one agent execution as JSON:
+//   { executionId, chatSessionId, workflowType, input, actions[], result, ... }
+// The REAL assistant output lives in actions[]: actionType "say" (prose) and
+// "reasoning" (thinking). The workspace-session transcript only keeps the
+// "On it." stub on the assistant turn, but carries that turn's `executionId`,
+// which equals this file's top-level `executionId` — so we can splice the real
+// text back onto the right turn.
+//
+// Layout (observed): <agentDir>/<workspaceHash>/<chatHash>/<file> — two nested
+// hash levels, leaf files have no extension. We walk that shape only (depth 2),
+// skipping workspace-sessions (handled elsewhere). Returns absolute paths.
+export function execLogFiles(): string[] {
+  const agent = kiroAgentDir();
+  if (!agent) {
+    return [];
+  }
+  const out: string[] = [];
+  let level1: Dirent[];
+  try {
+    level1 = readdirSync(agent, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  for (const l1 of level1) {
+    if (!l1.isDirectory() || l1.name === "workspace-sessions") {
+      continue;
+    }
+    const l1Path = join(agent, l1.name);
+    let level2: Dirent[];
+    try {
+      level2 = readdirSync(l1Path, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const l2 of level2) {
+      if (!l2.isDirectory()) {
+        continue;
+      }
+      const l2Path = join(l1Path, l2.name);
+      let leaves: Dirent[];
+      try {
+        leaves = readdirSync(l2Path, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const leaf of leaves) {
+        if (leaf.isFile()) {
+          out.push(join(l2Path, leaf.name));
+        }
+      }
+    }
+  }
+  return out;
 }

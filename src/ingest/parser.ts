@@ -20,6 +20,11 @@ import type {
   SessionIndexEntry,
 } from "../types.ts";
 import { attributeRepos, type RepoRegistry } from "./repos.ts";
+import type { ExecMap } from "./execlog.ts";
+
+// Assistant stub Kiro writes to the transcript when the real output lives in
+// the exec store. We only replace turns whose text is exactly this.
+const ASSISTANT_STUB = "On it.";
 
 function toRole(raw: unknown): Role {
   switch (raw) {
@@ -103,6 +108,7 @@ export function parseSessionFile(
   projectPathFallback: string,
   fileMtimeMs: number,
   registry: RepoRegistry,
+  execMap?: ExecMap,
 ): NormalizedSession | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return null;
@@ -127,19 +133,43 @@ export function parseSessionFile(
     if (!entry || typeof entry !== "object") {
       continue;
     }
-    const message = (entry as Record<string, unknown>).message;
+    const entryObj = entry as Record<string, unknown>;
+    const message = entryObj.message;
     if (!message || typeof message !== "object") {
       continue;
     }
     const m = message as Record<string, unknown>;
-    const text = extractText(m.content).trim();
+    let text = extractText(m.content).trim();
+    const role = toRole(m.role);
+
+    // Splice real assistant output from the exec store when this transcript
+    // turn is just the "On it." stub. The exec file is keyed by the turn's
+    // executionId (lives on the history entry, not the message).
+    if (execMap && role === "assistant" && text === ASSISTANT_STUB) {
+      const execId = typeof entryObj.executionId === "string" ? entryObj.executionId : null;
+      const enriched = execId ? execMap.get(execId) : undefined;
+      if (enriched) {
+        const parts: string[] = [];
+        if (enriched.reasoning) {
+          parts.push(enriched.reasoning);
+        }
+        if (enriched.say) {
+          parts.push(enriched.say);
+        }
+        const joined = parts.join("\n\n").trim();
+        if (joined.length > 0) {
+          text = joined;
+        }
+      }
+    }
+
     if (text.length === 0) {
       continue; // skip empty/tool-only frames from the searchable record
     }
     if (isSystemPrompt(text)) {
       continue; // skip Kiro's injected system/identity prompt (not conversation)
     }
-    messages.push({ idx: idx++, role: toRole(m.role), text });
+    messages.push({ idx: idx++, role, text });
   }
 
   const projectPath =

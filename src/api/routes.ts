@@ -8,6 +8,8 @@ import {
   counts,
   listRepos,
   listSessionsByRepo,
+  listUntaggedSessions,
+  countUntaggedSessions,
   getSessionRepos,
 } from "../store/sessions.ts";
 import { searchMessages } from "../search/fts.ts";
@@ -29,7 +31,12 @@ export function apiProjects() {
 
 // Method 2 grouping: repos a chat actually touched.
 export function apiRepos() {
-  return { repos: listRepos() };
+  return { repos: listRepos(), untagged: countUntaggedSessions() };
+}
+
+// Sessions with no repo attribution (the "Untagged" bucket in the UI).
+export function apiUntaggedSessions() {
+  return { sessions: listUntaggedSessions() };
 }
 
 export function apiSessions(projectId?: number) {

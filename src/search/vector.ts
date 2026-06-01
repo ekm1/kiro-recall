@@ -212,6 +212,8 @@ export async function indexPendingVectors(batch = 200): Promise<number> {
 
 export interface VectorHit {
   sessionId: string;
+  projectId: number;
+  projectName: string;
   title: string;
   idx: number;
   snippet: string;
@@ -253,19 +255,22 @@ export async function vectorSearch(
 
   const rows = db
     .query(
-      `SELECT mv.message_id, mv.session_id, mv.vec, m.text, m.idx, s.title
+      `SELECT mv.message_id, mv.session_id, mv.project_id, mv.vec, m.text, m.idx, s.title, p.name AS project_name
        FROM message_vectors mv
        JOIN messages m ON m.id = mv.message_id
        JOIN sessions s ON s.id = mv.session_id
+       JOIN projects p ON p.id = mv.project_id
        ${where}`,
     )
     .all(...params) as Array<{
     message_id: number;
     session_id: string;
+    project_id: number;
     vec: Uint8Array;
     text: string;
     idx: number;
     title: string;
+    project_name: string;
   }>;
 
   const scored = rows
@@ -278,6 +283,8 @@ export async function vectorSearch(
 
   return scored.slice(0, opts.limit ?? 10).map(({ r, score }) => ({
     sessionId: r.session_id,
+    projectId: r.project_id,
+    projectName: r.project_name,
     title: r.title,
     idx: r.idx,
     snippet: r.text.slice(0, 160).replace(/\s+/g, " "),

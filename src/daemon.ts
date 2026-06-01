@@ -61,7 +61,7 @@ function gracefulExit(): void {
   process.exit(0);
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const args = new Set(process.argv.slice(2));
 
   getDb(); // init schema
@@ -71,7 +71,7 @@ function main(): void {
     wipeAll();
   }
 
-  const result = fullScan();
+  const result = await fullScan();
   log.info("DAEMON", "scan result", { ...result, totals: counts() });
 
   if (args.has("--scan-once") || args.has("--rebuild")) {
@@ -100,4 +100,7 @@ function main(): void {
   log.info("DAEMON", "running", { pid: process.pid });
 }
 
-main();
+main().catch((e) => {
+  log.error("DAEMON", "fatal", { error: e instanceof Error ? e.message : String(e) });
+  process.exit(1);
+});

@@ -10,6 +10,7 @@ import {
   apiRepos,
   apiSessions,
   apiSessionsByRepo,
+  apiUntaggedSessions,
   apiSession,
   apiSearch,
 } from "./routes.ts";
@@ -66,6 +67,9 @@ export function startServer(): void {
             return json({ error: "missing repo" }, 400);
           }
           return json(apiSessionsByRepo(repo));
+        }
+        if (path === "/api/sessions-untagged") {
+          return json(apiUntaggedSessions());
         }
         if (path === "/api/sessions") {
           const pid = url.searchParams.get("projectId");

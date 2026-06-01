@@ -2,6 +2,7 @@
 
 const state = {
   repos: [],
+  untagged: 0,
   activeRepo: null,
   activeRepoName: "",
   activeSessionId: null,
@@ -105,8 +106,9 @@ async function loadHealth() {
 // ---------- repos ----------
 
 async function loadRepos() {
-  const { repos } = await api("/api/repos");
+  const { repos, untagged } = await api("/api/repos");
   state.repos = repos;
+  state.untagged = untagged || 0;
   renderRepos();
 }
 
@@ -130,6 +132,34 @@ function renderRepos() {
     if (r.repo === state.activeRepo) row.classList.add("active");
     pane.appendChild(row);
   }
+
+  // Untagged bucket: sessions with no repo attribution. Without this they'd be
+  // invisible (the list is repo-grouped), including brand-new chats whose
+  // transcripts don't yet mention a known repo path.
+  if (state.untagged > 0) {
+    const row = el("div", "row repo-row");
+    const ico = el("div", "repo-ico", "·");
+    ico.style.background = "hsl(0 0% 45%)";
+    row.appendChild(ico);
+    row.appendChild(el("span", "repo-name", "Untagged"));
+    row.appendChild(el("span", "repo-count", String(state.untagged)));
+    row.title = "Sessions with no repo attribution";
+    row.onclick = () => selectUntagged();
+    if (state.activeRepo === "__untagged__") row.classList.add("active");
+    pane.appendChild(row);
+  }
+}
+
+async function selectUntagged() {
+  state.mode = "repo";
+  state.activeRepo = "__untagged__";
+  state.activeRepoName = "Untagged";
+  renderRepos();
+  const scopeLabel = $("#scope-label");
+  scopeLabel.hidden = false;
+  $("#scope-name").textContent = "Untagged";
+  const { sessions } = await api("/api/sessions-untagged");
+  renderSessions(sessions, "Untagged");
 }
 
 async function selectRepo(repo, name) {
@@ -163,7 +193,9 @@ function renderSessions(sessions, labelText) {
     const row = el("div", "row");
     row.appendChild(el("span", "title", cleanTitle(s.title)));
     const meta = el("div", "meta");
-    meta.appendChild(el("span", null, fmtRelative(s.created_at)));
+    // Show last-activity (updated_at), not created_at: an ongoing/continued
+    // chat keeps its original created_at but bumps updated_at each turn.
+    meta.appendChild(el("span", null, fmtRelative(s.updated_at ?? s.created_at)));
     meta.appendChild(el("span", "sep", "·"));
     meta.appendChild(el("span", null, `${s.message_count} msgs`));
     if (s.session_type) {
